@@ -10,13 +10,17 @@ from itsdangerous import URLSafeTimedSerializer as Serializer
 from flask_mail import Mail, Message
 import click
 from flask.cli import with_appcontext
+import os  
 
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(basedir, "instance", "hallmanagement.db")
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '1234'
 # DATABASE_URL = os.environ['DATABASE']
 # app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE')
 # conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///hallmanagement.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
 
 app.config['MAIL_SERVER'] = 'smtp.googlemail.com'
 app.config['MAIL_PORT'] = 587
@@ -128,31 +132,38 @@ def Contact():
 def register():
     if request.method == 'POST':
         if request.form['password'] != request.form['confirmpassword']:
-            flash("Passwords do not match check it", 'warning')
+            flash("Passwords do not match, check it", 'warning')
             return redirect("/SignUp")
         elif request.form['secretkey'] != "porter2021":
-            flash(
-                "Key provided is invalid, check with the head porter and try again", 'info')
+            flash("Key provided is invalid, check with the head porter and try again", 'info')
             return redirect("/SignUp")
-        else:
-            user_info = User(
-                fullname=request.form['fullname'].title(),
-                email=request.form['email'],
-                username=request.form['username'],
-                password=generate_password_hash(
-                    request.form['password'], method='pbkdf2:sha256')
 
-            )
-            try:
-                db.session.add(user_info)
-                db.session.commit()  # Add new data to db
-                return redirect("/login")
-            except:
-                # replace with nicer experience
-                flash("Username already exists choose another one", 'error')
-                return redirect("/SignUp")
-    else:
-        return render_template('RegisterStaff.html')
+        # --- Check if username already exists ---
+        existing_user = User.query.filter_by(username=request.form['username']).first()
+        if existing_user:
+            flash("Username already exists, choose another one", 'error')
+            return redirect("/SignUp")
+
+        # --- Check if email already exists (optional) ---
+        existing_email = User.query.filter_by(email=request.form['email']).first()
+        if existing_email:
+            flash("Email already registered, try login instead", 'error')
+            return redirect("/SignUp")
+
+        # --- If everything is fine, create user ---
+        user_info = User(
+            fullname=request.form['fullname'].title(),
+            email=request.form['email'],
+            username=request.form['username'],
+            password=generate_password_hash(request.form['password'], method='pbkdf2:sha256')
+        )
+        db.session.add(user_info)
+        db.session.commit()
+        flash("Account created successfully, please login", 'success')
+        return redirect("/login")
+
+    return render_template('RegisterStaff.html')
+
 
 
 @app.route('/login', methods=['POST', 'GET'])
